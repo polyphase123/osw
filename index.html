@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offshore Wind Farm - Fixed Bottom Layout</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Roboto, monospace; background-color: #87CEEB; color: #fff; }
+        
+        /* UI Overlay */
+        #ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 360px; /* Slightly wider for extra controls */
+            height: 100vh;
+            background: rgba(10, 20, 40, 0.9);
+            backdrop-filter: blur(8px);
+            border-right: 1px solid #4db8ff;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 5px 0 15px rgba(0,0,0,0.3);
+        }
+
+        h1 { font-size: 20px; margin: 0 0 10px 0; color: #4db8ff; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #4db8ff; padding-bottom: 10px; }
+        h2 { font-size: 13px; margin: 15px 0 5px 0; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #333; padding-bottom: 5px; }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .metric-box {
+            background: rgba(255,255,255,0.05);
+            padding: 8px;
+            border-radius: 4px;
+            border-left: 3px solid #4db8ff;
+        }
+        
+        .metric-box.alert { border-left-color: #ff4d4d; background: rgba(255, 77, 77, 0.1); }
+        .metric-box.warn { border-left-color: #ffcc00; background: rgba(255, 204, 0, 0.1); }
+
+        .label { font-size: 10px; color: #bbb; display: block; margin-bottom: 2px; }
+        .value { font-size: 16px; font-weight: bold; font-family: 'Courier New', monospace; color: #fff; }
+        .unit { font-size: 10px; color: #888; }
+
+        .control-group { margin-bottom: 8px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; }
+        label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; color: #ddd; }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: #444;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #4db8ff;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+
+        button {
+            background: #4db8ff;
+            color: #001e36;
+            border: none;
+            padding: 10px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 11px;
+            width: 100%;
+            margin-top: 5px;
+            text-transform: uppercase;
+            transition: background 0.2s;
+        }
+        button:hover { background: #7dcfff; }
+        button.danger { background: #ff4d4d; color: white; }
+        button.danger:hover { background: #ff6666; }
+
+        .ship-status { font-size: 11px; padding: 10px; background: rgba(0,255,0,0.1); border: 1px solid #00ff00; color: #88ff88; margin-top: 10px; }
+
+        #loading {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #001e36;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            color: #4db8ff;
+            font-size: 24px;
+            font-family: sans-serif;
+        }
+
+        /* Canvas */
+        canvas { display: block; }
+    </style>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <div id="loading">Initializing Manila Bay Wind Farm...</div>
+
+    <div id="ui-container">
+        <h1>Manila Bay Operations</h1>
+        
+        <!-- TELEMETRY -->
+        <h2>Farm Telemetry (Aggregated)</h2>
+        <div class="metric-grid">
+            <div class="metric-box" id="box-power">
+                <span class="label">Total Active Power</span>
+                <span class="value" id="val-power">0.0</span> <span class="unit">MW</span>
+            </div>
+            <div class="metric-box">
+                <span class="label">Avg Rotor Speed</span>
+                <span class="value" id="val-rpm">0.0</span> <span class="unit">RPM</span>
+            </div>
+            <div class="metric-box">
+                <span class="label">Tip Speed Ratio</span>
+                <span class="value" id="val-tsr">0.0</span> <span class="unit">λ</span>
+            </div>
+            <div class="metric-box" id="box-stress">
+                <span class="label">Farm Load</span>
+                <span class="value" id="val-stress">0</span> <span class="unit">%</span>
+            </div>
+        </div>
+
+        <!-- CONTROLS -->
+        <h2>Environmental Conditions</h2>
+        <div class="control-group">
+            <label>Wind Speed (m/s) <span id="disp-wind">12</span></label>
+            <input type="range" id="in-wind" min="0" max="35" step="0.5" value="12">
+        </div>
+        <div class="control-group">
+            <label>Wind Direction (deg) <span id="disp-dir">0</span></label>
+            <input type="range" id="in-dir" min="0" max="360" step="1" value="0">
+        </div>
+        <div class="control-group">
+            <label>Wave Height (m) <span id="disp-wave">2.5</span></label>
+            <input type="range" id="in-wave" min="0" max="12" step="0.1" value="2.5">
+        </div>
+
+        <h2>Engineering Parameters</h2>
+        <div class="control-group">
+            <label>Air Density (kg/m³) <span id="disp-rho">1.225</span></label>
+            <input type="range" id="in-rho" min="1.0" max="1.3" step="0.001" value="1.225">
+        </div>
+        <div class="control-group">
+            <label>Cut-In Speed (m/s) <span id="disp-cutin">3</span></label>
+            <input type="range" id="in-cutin" min="1" max="10" step="0.5" value="3">
+        </div>
+        <div class="control-group">
+            <label>Cut-Out Speed (m/s) <span id="disp-cutout">25</span></label>
+            <input type="range" id="in-cutout" min="20" max="35" step="0.5" value="25">
+        </div>
+
+        <h2>Turbine Control</h2>
+        <div class="control-group">
+            <label>Nacelle Yaw (deg) <span id="disp-yaw">0</span></label>
+            <input type="range" id="in-yaw" min="-180" max="180" step="1" value="0">
+            <button id="btn-autoyaw">MODE: AUTO-YAW (ON)</button>
+        </div>
+        <div class="control-group">
+            <label>Blade Pitch (deg) <span id="disp-pitch">0</span></label>
+            <input type="range" id="in-pitch" min="0" max="90" step="0.5" value="0">
+        </div>
+        
+        <button class="danger" id="btn-brake" onclick="toggleBrake()">EMERGENCY BRAKE</button>
+        
+        <div class="ship-status">
+            <strong>Vessel Traffic:</strong><br>
+            • CTV "Wind Pioneer": Docked<br>
+            • Cargo "Ever Green": In Transit
+        </div>
+    </div>
+
+    <script>
+        // --- CONSTANTS & CONFIG ---
+        const CONFIG = {
+            bladeLength: 65,
+            towerHeight: 90,
+            waterColor: 0x004466,
+            skyColor: 0x87CEEB,
+            ratedPower: 8.0, // MW per turbine (At standard conditions)
+            numTurbines: 10
+        };
+
+        // --- STATE ---
+        const state = {
+            windSpeed: 12,
+            windDir: 0,
+            waveHeight: 2.5,
+            yaw: 0,
+            pitch: 0,
+            rpm: 0,
+            autoYaw: true,
+            brake: false,
+            time: 0,
+            // New Engineering Inputs
+            airDensity: 1.225, // Standard is 1.225
+            cutIn: 3.0,
+            cutOut: 25.0
+        };
+
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(CONFIG.skyColor, 0.0003);
+        scene.background = new THREE.Color(CONFIG.skyColor);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 5000);
+        camera.position.set(0, 200, 800); 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.maxPolarAngle = Math.PI / 2 - 0.02;
+        controls.minDistance = 30;
+        controls.maxDistance = 2000;
+
+        // --- LIGHTING ---
+        const ambientLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.1);
+        sunLight.position.set(-200, 400, 200);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 4096;
+        sunLight.shadow.mapSize.height = 4096;
+        const d = 1000;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        scene.add(sunLight);
+
+        // --- OCEAN ---
+        const waterGeo = new THREE.PlaneGeometry(5000, 5000, 256, 256);
+        const waterMat = new THREE.MeshStandardMaterial({
+            color: CONFIG.waterColor,
+            roughness: 0.05,
+            metalness: 0.6,
+            flatShading: true
+        });
+        const ocean = new THREE.Mesh(waterGeo, waterMat);
+        ocean.rotation.x = -Math.PI / 2;
+        ocean.receiveShadow = true;
+        scene.add(ocean);
+
+        const posAttr = waterGeo.attributes.position;
+        const originalPositions = [];
+        for (let i = 0; i < posAttr.count; i++) {
+            originalPositions.push({ x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) });
+        }
+
+        // --- MATERIALS ---
+        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
+        const cebuYellowMat = new THREE.MeshStandardMaterial({ color: 0xfdb913, roughness: 0.4 });
+        const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+        const greyMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.6, roughness: 0.4 });
+        const redMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const shipHullMat = new THREE.MeshStandardMaterial({ color: 0xaa3333, roughness: 0.6 });
+        const blueHullMat = new THREE.MeshStandardMaterial({ color: 0x004488, roughness: 0.5 });
+        const blackHullMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7 });
+        const sandMat = new THREE.MeshStandardMaterial({ color: 0xe6c288, roughness: 0.9 });
+        const grassMat = new THREE.MeshStandardMaterial({ color: 0x55aa55, roughness: 0.8 });
+
+        // --- ASSET GENERATORS ---
+
+        function createTextTexture(text) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a334d'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ffffff'; 
+            ctx.font = 'bold 120px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+            ctx.strokeStyle = '#fdb913'; 
+            ctx.lineWidth = 20;
+            ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // --- MANILA BAY SIGN ---
+        const signGroup = new THREE.Group();
+        signGroup.position.set(0, 20, 450); 
+        scene.add(signGroup);
+
+        const postGeo = new THREE.CylinderGeometry(1, 1, 30);
+        const post1 = new THREE.Mesh(postGeo, greyMat); post1.position.set(-40, 0, 0);
+        const post2 = new THREE.Mesh(postGeo, greyMat); post2.position.set(40, 0, 0);
+        signGroup.add(post1);
+        signGroup.add(post2);
+
+        const billboardGeo = new THREE.BoxGeometry(100, 25, 2);
+        const billboardMat = new THREE.MeshStandardMaterial({ 
+            map: createTextTexture("MANILA BAY"),
+            roughness: 0.2
+        });
+        const billboard = new THREE.Mesh(billboardGeo, billboardMat);
+        billboard.position.y = 15;
+        signGroup.add(billboard);
+
+        // --- LAND MASS GENERATOR ---
+        function createLand() {
+            const landGroup = new THREE.Group();
+            landGroup.position.set(0, -5, -800); 
+            
+            const islandGeo = new THREE.CylinderGeometry(800, 900, 40, 64);
+            islandGeo.scale(3.0, 1, 0.5); 
+            const island = new THREE.Mesh(islandGeo, sandMat);
+            island.receiveShadow = true;
+            landGroup.add(island);
+
+            const grassGeo = new THREE.CylinderGeometry(750, 800, 10, 64);
+            grassGeo.scale(2.9, 1, 0.45);
+            const grass = new THREE.Mesh(grassGeo, grassMat);
+            grass.position.y = 25;
+            grass.receiveShadow = true;
+            landGroup.add(grass);
+
+            for(let i=0; i<100; i++) {
+                const tree = new THREE.Group();
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(2, 3, 10), new THREE.MeshStandardMaterial({color:0x5A3A19}));
+                const leaves = new THREE.Mesh(new THREE.ConeGeometry(8, 20, 8), new THREE.MeshStandardMaterial({color:0x228822}));
+                leaves.position.y = 10;
+                tree.add(trunk);
+                tree.add(leaves);
+                const xPos = (Math.random() - 0.5) * 3000;
+                const zPos = (Math.random() - 0.5) * 200;
+                tree.position.set(xPos, 30, zPos);
+                landGroup.add(tree);
+            }
+
+            const lhGroup = new THREE.Group();
+            lhGroup.position.set(600, 30, 50);
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(8, 12, 40), new THREE.MeshStandardMaterial({color: 0xffffff}));
+            const top = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 6), new THREE.MeshStandardMaterial({color: 0x222222}));
+            top.position.y = 20;
+            const glass = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 6), new THREE.MeshStandardMaterial({color: 0xffffaa, transparent: true, opacity: 0.6}));
+            glass.position.y = 26;
+            const roof = new THREE.Mesh(new THREE.ConeGeometry(9, 6, 16), new THREE.MeshStandardMaterial({color: 0xaa0000}));
+            roof.position.y = 30;
+
+            lhGroup.add(base); lhGroup.add(top); lhGroup.add(glass); lhGroup.add(roof);
+            landGroup.add(lhGroup);
+
+            scene.add(landGroup);
+        }
+        createLand();
+
+
+        // --- TURBINE FACTORY ---
+        const turbines = [];
+        
+        const bladeGeo = createBladeGeometry();
+        const towerGeo = new THREE.CylinderGeometry(3, 4.5, CONFIG.towerHeight, 16);
+        const nacelleGeo = new THREE.BoxGeometry(10, 6, 16);
+        const hubGeo = new THREE.SphereGeometry(3.5, 16, 16);
+        const monopileGeo = new THREE.CylinderGeometry(4.5, 4.5, 40, 16);
+
+        function createTurbine(x, z, index) {
+            const root = new THREE.Group();
+            root.position.set(x, 0, z);
+            scene.add(root);
+
+            const monopile = new THREE.Mesh(monopileGeo, yellowMat);
+            monopile.position.y = 10;
+            monopile.castShadow = true;
+            monopile.receiveShadow = true;
+            root.add(monopile);
+
+            const tp = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 2, 16), yellowMat);
+            tp.position.y = 30;
+            root.add(tp);
+
+            const swayPivot = new THREE.Group();
+            swayPivot.position.y = 31;
+            root.add(swayPivot);
+
+            const tower = new THREE.Mesh(towerGeo, whiteMat);
+            tower.position.y = CONFIG.towerHeight / 2;
+            tower.castShadow = true;
+            tower.receiveShadow = true;
+            swayPivot.add(tower);
+
+            const nacelleGroup = new THREE.Group();
+            nacelleGroup.position.y = CONFIG.towerHeight;
+            swayPivot.add(nacelleGroup);
+
+            const nacelle = new THREE.Mesh(nacelleGeo, whiteMat);
+            nacelle.position.z = 4;
+            nacelle.castShadow = true;
+            nacelleGroup.add(nacelle);
+
+            const light = new THREE.Mesh(new THREE.SphereGeometry(0.5), redMat);
+            light.position.set(0, 4, 0);
+            nacelleGroup.add(light);
+
+            const hubGroup = new THREE.Group();
+            hubGroup.position.z = -5;
+            // RANDOM PHASE INITIALIZATION:
+            // This ensures they don't all look identical
+            hubGroup.rotation.z = Math.random() * Math.PI * 2;
+            nacelleGroup.add(hubGroup);
+
+            const hub = new THREE.Mesh(hubGeo, whiteMat);
+            hub.scale.z = 1.3;
+            hubGroup.add(hub);
+
+            const blades = [];
+            for (let i = 0; i < 3; i++) {
+                const pitchNode = new THREE.Group();
+                pitchNode.rotation.z = i * 120 * (Math.PI/180);
+                hubGroup.add(pitchNode);
+
+                const blade = new THREE.Mesh(bladeGeo, whiteMat);
+                blade.castShadow = true;
+                pitchNode.add(blade);
+                blades.push(blade);
+            }
+
+            turbines.push({
+                root, swayPivot, nacelleGroup, hubGroup, blades,
+                phaseOffset: Math.random() * Math.PI * 2
+            });
+        }
+
+        const rows = 2;
+        const cols = 5;
+        const spacingX = 150;
+        const spacingZ = 200;
+        const startX = -((cols-1)*spacingX)/2; 
+        const startZ = -300; 
+
+        const locations = [];
+        for(let r=0; r<rows; r++) {
+            for(let c=0; c<cols; c++) {
+                locations.push({
+                    x: startX + (c * spacingX),
+                    z: startZ + (r * spacingZ) 
+                });
+            }
+        }
+        locations.forEach((loc, i) => createTurbine(loc.x, loc.z, i));
+
+
+        // --- SHIP FACTORY ---
+        const ships = [];
+
+        function createGenericShip(type, color, x, z, speed, scale=1) {
+            const group = new THREE.Group();
+            group.position.set(x, 0, z);
+            
+            let hull;
+            if (type === 'cargo') {
+                hull = new THREE.Mesh(new THREE.BoxGeometry(15, 8, 80), new THREE.MeshStandardMaterial({color: color}));
+                hull.castShadow = true;
+                const bridge = new THREE.Mesh(new THREE.BoxGeometry(14, 12, 10), whiteMat);
+                bridge.position.set(0, 10, 30); 
+                hull.add(bridge);
+                for(let i=0; i<4; i++) {
+                    const c = new THREE.Mesh(new THREE.BoxGeometry(12, 4, 10), new THREE.MeshStandardMaterial({color: Math.random()>0.5?0xaa3333:0x3333aa}));
+                    c.position.set(0, 6, -20 + (i*11));
+                    hull.add(c);
+                }
+                hull.rotation.y = Math.PI/2; 
+            } else if (type === 'fishing') {
+                hull = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 16), new THREE.MeshStandardMaterial({color: color}));
+                const cabin = new THREE.Mesh(new THREE.BoxGeometry(5, 5, 6), whiteMat);
+                cabin.position.set(0, 4, 2);
+                hull.add(cabin);
+                const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,12), greyMat);
+                mast.position.set(0, 6, -3);
+                hull.add(mast);
+                hull.rotation.y = Math.PI/2;
+            } else if (type === 'yacht') {
+                hull = new THREE.Mesh(new THREE.ConeGeometry(5, 20, 4), whiteMat);
+                hull.rotation.z = -Math.PI/2;
+                hull.rotation.x = -Math.PI/2; 
+                hull.scale.set(1, 0.5, 1);
+                const cabin = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 6), new THREE.MeshStandardMaterial({color:0xeeeeee}));
+                cabin.position.set(0, 2, 0); 
+                const wrapper = new THREE.Group();
+                wrapper.add(hull);
+                wrapper.add(cabin);
+                wrapper.rotation.y = Math.PI/2; 
+                hull = wrapper;
+            }
+
+            hull.position.y = 2; 
+            hull.scale.set(scale, scale, scale);
+            group.add(hull);
+            scene.add(group);
+
+            ships.push({
+                group: group,
+                speed: speed,
+                limit: 2000, 
+                type: type
+            });
+        }
+        
+        createGenericShip('cargo', 0x228822, -600, 200, 6); 
+        createGenericShip('cargo', 0x3333aa, -900, 300, 5); 
+        createGenericShip('fishing', 0xcc4444, 200, 400, 8, 1.2); 
+        createGenericShip('fishing', 0x44cc44, -200, 500, 7, 1.2); 
+        createGenericShip('yacht', 0xffffff, -500, 100, 12, 1.5); 
+
+        const ctvGroup = new THREE.Group();
+        ctvGroup.position.set(20, 0, 20); 
+        ctvGroup.position.set(startX + 150, 0, startZ + 30); 
+        scene.add(ctvGroup);
+        const ctvHull = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 18), new THREE.MeshStandardMaterial({color: 0xff8800}));
+        ctvHull.position.y = 1;
+        ctvGroup.add(ctvHull);
+        const ctvCabin = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 6), whiteMat);
+        ctvCabin.position.set(0, 4.5, 2);
+        ctvGroup.add(ctvCabin);
+
+        const tankerGroup = new THREE.Group();
+        tankerGroup.position.set(600, 0, 600);
+        tankerGroup.rotation.y = Math.PI; 
+        scene.add(tankerGroup);
+        const tankerHull = new THREE.Mesh(new THREE.BoxGeometry(18, 7, 90), blackHullMat);
+        tankerHull.position.y = 1.5; tankerHull.castShadow = true;
+        tankerGroup.add(tankerHull);
+        const tankerBridge = new THREE.Mesh(new THREE.BoxGeometry(16, 10, 12), whiteMat);
+        tankerBridge.position.set(0, 9, -35);
+        tankerGroup.add(tankerBridge);
+
+
+        // --- AIRCRAFT (Cebu Pacific) ---
+        function createCebuPacificPlane() {
+            const planeGroup = new THREE.Group();
+            
+            const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 18, 16), whiteMat);
+            fuselage.rotation.z = -Math.PI / 2; 
+            fuselage.castShadow = true;
+            planeGroup.add(fuselage);
+
+            const nose = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 16), cebuYellowMat);
+            nose.position.x = 9; 
+            planeGroup.add(nose);
+
+            const tailCone = new THREE.Mesh(new THREE.ConeGeometry(1.5, 4, 16), whiteMat);
+            tailCone.rotation.z = Math.PI / 2; 
+            tailCone.position.x = -11;
+            planeGroup.add(tailCone);
+
+            const wingGeo = new THREE.BoxGeometry(4, 0.2, 16); 
+            const wings = new THREE.Mesh(wingGeo, cebuYellowMat);
+            wings.position.set(2, 0, 0); 
+            wings.castShadow = true;
+            planeGroup.add(wings);
+
+            const tailFin = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 0.2), cebuYellowMat);
+            tailFin.position.set(-10, 2.5, 0);
+            const tailShape = new THREE.Group();
+            tailShape.add(tailFin);
+            tailShape.rotation.z = 0.2;
+            planeGroup.add(tailShape);
+
+            const hStab = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 6), cebuYellowMat);
+            hStab.position.set(-10, 0.5, 0);
+            planeGroup.add(hStab);
+
+            const engineGeo = new THREE.CylinderGeometry(0.8, 0.8, 2.5, 12);
+            const engL = new THREE.Mesh(engineGeo, cebuYellowMat);
+            engL.rotation.z = Math.PI/2; 
+            engL.position.set(3, -1, 3);
+            planeGroup.add(engL);
+
+            const engR = new THREE.Mesh(engineGeo, cebuYellowMat);
+            engR.rotation.z = Math.PI/2;
+            engR.position.set(3, -1, -3);
+            planeGroup.add(engR);
+
+            return planeGroup;
+        }
+
+        const planes = [];
+        const p1 = createCebuPacificPlane();
+        p1.userData = { speed: 80, altitude: 200, offset: 0 };
+        p1.position.set(-800, 200, 0);
+        scene.add(p1);
+        planes.push(p1);
+
+        const p2 = createCebuPacificPlane();
+        p2.userData = { speed: 90, altitude: 250, offset: 200 };
+        p2.position.set(-1000, 250, 150);
+        scene.add(p2);
+        planes.push(p2);
+
+
+        // --- HELPERS ---
+
+        function createBladeGeometry() {
+            const shape = new THREE.Shape();
+            shape.moveTo(0, 0);
+            shape.bezierCurveTo(1, 0, 2.5, 4, 0.5, CONFIG.bladeLength); 
+            shape.lineTo(0, CONFIG.bladeLength);
+            shape.bezierCurveTo(-0.5, 4, -1.5, 0.5, 0, 0); 
+
+            const extrudeSettings = { steps: 10, depth: 0.6, bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.05, bevelSegments: 2 };
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            geometry.translate(0, 0, -0.3); 
+
+            const pos = geometry.attributes.position;
+            const v = new THREE.Vector3();
+            for(let i=0; i<pos.count; i++){
+                v.fromBufferAttribute(pos, i);
+                const angle = (1.0 - (v.y / CONFIG.bladeLength)) * (25 * Math.PI / 180);
+                const x = v.x * Math.cos(angle) - v.z * Math.sin(angle);
+                const z = v.x * Math.sin(angle) + v.z * Math.cos(angle);
+                pos.setXYZ(i, x, v.y, z);
+            }
+            geometry.computeVertexNormals();
+            return geometry;
+        }
+
+        function updateWaves(dt) {
+            state.time += dt;
+            const positions = waterGeo.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                const orig = originalPositions[i];
+                const z = Math.sin(orig.x * 0.01 + state.time * 0.5) * (state.waveHeight * 0.4) +
+                          Math.cos(orig.y * 0.01 + state.time * 0.4) * (state.waveHeight * 0.4);
+                positions.setZ(i, z);
+            }
+            positions.needsUpdate = true;
+            waterGeo.computeVertexNormals();
+
+            // Bob Ships
+            const h = Math.sin(state.time)*0.5;
+            ctvGroup.position.y = h;
+            tankerGroup.position.y = 1.5 + h * 0.5;
+            
+            ships.forEach(s => {
+                s.group.position.y = Math.sin(state.time * 1.5 + s.group.position.x*0.1) * 0.5;
+                s.group.rotation.x = Math.sin(state.time + s.group.position.x)*0.05;
+            });
+
+            // Bob Signage
+            signGroup.position.y = 20 + Math.sin(state.time * 0.5) * 2;
+        }
+
+        function updatePhysics(dt) {
+            let targetRPM = 0;
+            // CHECK ENGINEERING LIMITS
+            if (state.windSpeed >= state.cutIn && state.windSpeed <= state.cutOut && !state.brake) {
+                const tsr = 7.0; 
+                const pitchRad = state.pitch * Math.PI / 180;
+                let aeroRPM = (state.windSpeed * tsr * 60) / (2 * Math.PI * CONFIG.bladeLength);
+                if(aeroRPM > 14) aeroRPM = 14; 
+                targetRPM = aeroRPM * Math.cos(pitchRad);
+            }
+            state.rpm = THREE.MathUtils.lerp(state.rpm, targetRPM, 0.4 * dt);
+
+            const targetYaw = state.windDir * Math.PI / 180;
+            const thrust = Math.pow(state.windSpeed, 2) * 0.00015;
+            const waveLoad = state.waveHeight * 0.001;
+            const wRad = state.windDir * Math.PI / 180;
+            
+            turbines.forEach(t => {
+                t.hubGroup.rotation.z -= (state.rpm * 2 * Math.PI / 60) * dt;
+
+                if(state.autoYaw) {
+                    let curY = t.nacelleGroup.rotation.y;
+                    let diff = targetYaw - curY;
+                    if (diff > Math.PI) diff -= Math.PI*2;
+                    if (diff < -Math.PI) diff += Math.PI*2;
+                    t.nacelleGroup.rotation.y += Math.sign(diff) * Math.min(Math.abs(diff), 0.15 * dt);
+                } else {
+                    const manYaw = state.yaw * Math.PI / 180;
+                    t.nacelleGroup.rotation.y = THREE.MathUtils.lerp(t.nacelleGroup.rotation.y, manYaw, 0.1);
+                }
+
+                t.blades.forEach(b => b.rotation.y = -state.pitch * Math.PI / 180);
+
+                const swayMag = thrust + waveLoad * Math.sin(state.time + t.phaseOffset);
+                const targetSwayX = swayMag * Math.cos(wRad);
+                const targetSwayZ = swayMag * Math.sin(wRad);
+                t.swayPivot.rotation.x = THREE.MathUtils.lerp(t.swayPivot.rotation.x, targetSwayX, 0.1);
+                t.swayPivot.rotation.z = THREE.MathUtils.lerp(t.swayPivot.rotation.z, -targetSwayZ, 0.1);
+            });
+
+            tankerGroup.position.x -= 3 * dt;
+            if(tankerGroup.position.x < -1200) tankerGroup.position.x = 1200;
+
+            ships.forEach(s => {
+                s.group.position.x += s.speed * dt;
+                if (s.group.position.x > s.limit) s.group.position.x = -s.limit;
+            });
+
+            planes.forEach(p => {
+                p.position.x += p.userData.speed * dt;
+                p.rotation.x = Math.sin(state.time * 0.5) * 0.05; 
+                
+                if (p.position.x > 1200) {
+                    p.position.x = -1200;
+                    p.position.z = (Math.random() - 0.5) * 600;
+                }
+            });
+
+            calculateStats();
+        }
+
+        function calculateStats() {
+            let singlePower = 0;
+            if(state.rpm > 1) {
+                // Power formula: P ~ density * v^3
+                // Standard Density is 1.225
+                const densityFactor = state.airDensity / 1.225;
+                
+                singlePower = Math.pow(state.windSpeed / 12, 3) * CONFIG.ratedPower;
+                singlePower *= Math.cos(state.pitch * Math.PI / 180);
+                singlePower *= densityFactor; // Apply Density Scaling
+
+                if(singlePower > CONFIG.ratedPower) singlePower = CONFIG.ratedPower;
+            }
+            
+            const totalPower = singlePower * CONFIG.numTurbines;
+            let s = (state.windSpeed / 30) * 50 + (state.waveHeight/10)*30 + (state.rpm/15)*20;
+            if(state.brake) s += 15;
+
+            const tipSpeed = (state.rpm * Math.PI / 30) * CONFIG.bladeLength;
+            let tsr = state.windSpeed > 1 ? tipSpeed / state.windSpeed : 0;
+
+            document.getElementById('val-power').innerText = totalPower.toFixed(1);
+            document.getElementById('val-rpm').innerText = state.rpm.toFixed(1);
+            document.getElementById('val-tsr').innerText = tsr.toFixed(1);
+            document.getElementById('val-stress').innerText = s.toFixed(0);
+
+            const stressBox = document.getElementById('box-stress');
+            stressBox.className = "metric-box";
+            if(s > 80) stressBox.classList.add('alert');
+            else if(s > 60) stressBox.classList.add('warn');
+        }
+
+        function toggleBrake() {
+            state.brake = !state.brake;
+            const b = document.getElementById('btn-brake');
+            if(state.brake) {
+                b.innerText = "BRAKE RELEASE";
+                b.style.background = "#4db8ff";
+                b.style.color = "black";
+            } else {
+                b.innerText = "EMERGENCY BRAKE";
+                b.style.background = "#ff4d4d";
+                b.style.color = "white";
+            }
+        }
+
+        // EVENT LISTENERS
+        document.getElementById('in-wind').addEventListener('input', e => { state.windSpeed = parseFloat(e.target.value); document.getElementById('disp-wind').innerText = state.windSpeed; });
+        document.getElementById('in-dir').addEventListener('input', e => { state.windDir = parseFloat(e.target.value); document.getElementById('disp-dir').innerText = state.windDir; });
+        document.getElementById('in-wave').addEventListener('input', e => { state.waveHeight = parseFloat(e.target.value); document.getElementById('disp-wave').innerText = state.waveHeight; });
+        document.getElementById('in-yaw').addEventListener('input', e => { state.yaw = parseFloat(e.target.value); document.getElementById('disp-yaw').innerText = state.yaw; state.autoYaw = false; document.getElementById('btn-autoyaw').innerText = "MODE: MANUAL"; });
+        document.getElementById('in-pitch').addEventListener('input', e => { state.pitch = parseFloat(e.target.value); document.getElementById('disp-pitch').innerText = state.pitch; });
+        document.getElementById('btn-autoyaw').addEventListener('click', e => { state.autoYaw = !state.autoYaw; e.target.innerText = state.autoYaw ? "MODE: AUTO-YAW (ON)" : "MODE: MANUAL"; });
+        
+        // NEW ENGINEERING LISTENERS
+        document.getElementById('in-rho').addEventListener('input', e => { state.airDensity = parseFloat(e.target.value); document.getElementById('disp-rho').innerText = state.airDensity; });
+        document.getElementById('in-cutin').addEventListener('input', e => { state.cutIn = parseFloat(e.target.value); document.getElementById('disp-cutin').innerText = state.cutIn; });
+        document.getElementById('in-cutout').addEventListener('input', e => { state.cutOut = parseFloat(e.target.value); document.getElementById('disp-cutout').innerText = state.cutOut; });
+
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            updateWaves(dt);
+            updatePhysics(dt);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        document.getElementById('loading').style.display = 'none';
+        animate();
+
+    </script>
+</body>
+</html>
