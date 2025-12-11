@@ -246,6 +246,11 @@
             </div>
 
             <div class="control-group">
+                <div class="control-label"><span><i class="fas fa-compass"></i> Wind Direction</span> <span id="disp-dir">0°</span></div>
+                <input type="range" id="in-dir" min="0" max="360" step="1" value="0">
+            </div>
+
+            <div class="control-group">
                 <div class="control-label"><span><i class="fas fa-industry"></i> Grid Demand</span> <span id="disp-demand">70 MW</span></div>
                 <input type="range" id="in-demand" min="0" max="150" step="1" value="70">
             </div>
@@ -256,6 +261,15 @@
                 <button id="btn-audio" onclick="toggleAudio()"><i class="fas fa-volume-up"></i> Audio</button>
             </div>
             
+            <div class="section-title" style="margin-top: 15px;"><i class="fas fa-cogs"></i> Turbine Control</div>
+            <div class="control-group">
+                <div class="control-label"><span><i class="fas fa-arrows-spin"></i> Nacelle Yaw</span> <span id="disp-yaw">0°</span></div>
+                <input type="range" id="in-yaw" min="-180" max="180" step="1" value="0">
+            </div>
+            <div class="control-group">
+                 <button id="btn-autoyaw" onclick="toggleAutoYaw()"><i class="fas fa-sync"></i> Auto-Yaw: ON</button>
+            </div>
+
             <div class="control-group">
                 <div class="control-label" style="color:#f87171">Active Faults: <span id="disp-faults">0</span></div>
                 <button class="btn-warn" id="btn-repair" onclick="dispatchCTV()"><i class="fas fa-tools"></i> Dispatch CTV</button>
@@ -880,6 +894,12 @@
         }
 
         // --- CONTROLS ---
+        function toggleAutoYaw() {
+            state.autoYaw = !state.autoYaw;
+            const btn = document.getElementById('btn-autoyaw');
+            if(state.autoYaw) btn.innerHTML = '<i class="fas fa-sync"></i> Auto-Yaw: ON';
+            else btn.innerHTML = '<i class="fas fa-sync"></i> Auto-Yaw: OFF';
+        }
         function toggleRadar() { 
             state.radarEnabled = !state.radarEnabled; 
             document.getElementById('btn-radar').classList.toggle('active');
@@ -950,6 +970,8 @@
 
         document.getElementById('in-time').addEventListener('input', e => { state.time = parseFloat(e.target.value); document.getElementById('disp-time').innerText = Math.floor(state.time)+":00"; });
         document.getElementById('in-wind').addEventListener('input', e => { state.windSpeed = parseFloat(e.target.value); document.getElementById('disp-wind').innerText = state.windSpeed + " m/s"; });
+        document.getElementById('in-dir').addEventListener('input', e => { state.windDir = parseFloat(e.target.value); document.getElementById('disp-dir').innerText = state.windDir + "°"; });
+        document.getElementById('in-yaw').addEventListener('input', e => { state.yaw = parseFloat(e.target.value); state.autoYaw = false; document.getElementById('disp-yaw').innerText = state.yaw + "°"; document.getElementById('btn-autoyaw').innerHTML = '<i class="fas fa-sync"></i> Auto-Yaw: OFF'; });
         document.getElementById('in-demand').addEventListener('input', e => { state.gridDemand = parseFloat(e.target.value); document.getElementById('disp-demand').innerText = state.gridDemand + " MW"; });
 
         window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
